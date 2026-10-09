@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: life-saver
+    runtime: node
+    plan: free
+    buildCommand: echo "nothing to build"
+    startCommand: node server.js
+    envVars:
+      - key: NURSE_CODE
+        generateValue: true
+      - key: HOSPITAL_CODE
+        generateValue: true
+      - key: POLICE_CODE
+        generateValue: true

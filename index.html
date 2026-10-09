@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Life Saver</title><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#D62839">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Life Saver">
+<link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" href="favicon.png">
+<style>
+:root{--bg:#fff;--card:#EBF5FC;--ink:#1F2F3E;--mut:#5F6E7C;--top:#D62839;--red:#D62839;--blue:#1E78C8;--green:#1F8F66;--line:#cfdce8}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1720;--card:#16222e;--ink:#e8eef4;--mut:#9fb0c0;--line:#2b3b4b;--green:#33b988}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Aptos,Calibri,Arial,sans-serif}
+.wrap{max-width:480px;margin:0 auto;min-height:100vh}
+header{background:var(--top);color:#fff;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+header img{width:36px;height:36px;border-radius:8px}header h1{font-size:19px;margin:0;flex:1}
+header button{background:none;border:1px solid #fff9;color:#fff;border-radius:8px;padding:6px 10px;font-size:14px}
+main{padding:16px 16px calc(24px + env(safe-area-inset-bottom,0px))}
+.sub{color:var(--mut);font-size:14px;margin:0 0 12px}.hint{font-size:13px;color:var(--mut)}
+.card{background:var(--card);border:2px solid var(--c,var(--line));border-radius:18px;padding:16px;margin-bottom:14px}
+.card h2{margin:0 0 6px;font-size:19px;color:var(--c)}.card p{margin:0 0 10px;font-size:15px}
+.tag{display:inline-block;font-size:12px;font-weight:700;color:var(--mut);margin-bottom:10px}
+.btn{width:100%;border:0;border-radius:12px;padding:14px;font-size:16px;font-weight:700;color:#fff;background:var(--c,var(--red));cursor:pointer}
+.btn.alt{background:none;color:var(--ink);border:1px solid var(--line);margin-top:8px}.btn.sm{padding:9px;font-size:14px;margin-top:6px}
+input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:16px;margin-bottom:10px;font-family:inherit}
+label{font-size:13px;font-weight:700;color:var(--mut);display:block;margin-bottom:3px}
+.row{display:flex;gap:10px}.row>div{flex:1}
+.msg{font-size:14px;font-weight:700;min-height:18px;margin-bottom:6px;color:var(--red)}.msg.ok{color:var(--green)}
+.big{font-size:34px;font-weight:800}.alert{background:var(--red);color:#fff;border-radius:12px;padding:12px;font-weight:700;margin:8px 0}
+.item{border-top:1px solid var(--line);padding:10px 0;font-size:15px}.item b{color:var(--blue)}
+.back{background:none;border:0;color:var(--blue);font-size:16px;font-weight:700;padding:0 0 12px;cursor:pointer}
+.tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button{flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink);font-weight:700;font-size:15px}.tabs .on{background:var(--red);color:#fff;border-color:var(--red)}
+iframe{width:100%;height:220px;border:1px solid var(--line);border-radius:12px;margin-top:8px}
+.pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:13px;font-weight:700;color:#fff;background:var(--mut)}.pill.on{background:var(--green)}
+</style></head><body><div class="wrap">
+<header><img src="icon-192.png" alt=""><h1>Life Saver</h1><button id="out" hidden>Log out</button></header>
+<main id="app"></main></div>
+<script>
+const $=id=>document.getElementById(id),app=$('app');
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let S={token:localStorage.getItem('ls_t')||'',user:JSON.parse(localStorage.getItem('ls_u')||'null'),pos:null,watch:null,timers:[]};
+async function api(p,b){const r=await fetch('/api/'+p,{method:b?'POST':'GET',headers:{'Content-Type':'application/json',...(S.token?{Authorization:'Bearer '+S.token}:{})},body:b?JSON.stringify(b):undefined});
+ const j=await r.json().catch(()=>({}));if(r.status===401&&S.token&&!/PIN|ID/.test(j.error||'')){clearSession()}if(!r.ok)throw new Error(j.error||'Error '+r.status);return j}
+function setSession(t,u){S.token=t;S.user=u;localStorage.setItem('ls_t',t);localStorage.setItem('ls_u',JSON.stringify(u));$('out').hidden=false}
+function clearSession(){S.token='';S.user=null;localStorage.removeItem('ls_t');localStorage.removeItem('ls_u');$('out').hidden=true}
+$('out').onclick=async()=>{try{await api('logout',{})}catch{}clearSession();go(home)};
+function stop(){S.timers.forEach(clearInterval);S.timers=[];if(S.watch!=null){navigator.geolocation.clearWatch(S.watch);S.watch=null}}
+function go(f,...a){stop();window.scrollTo(0,0);f(...a)}
+function every(ms,f){f();S.timers.push(setInterval(f,ms))}
+// ---- GPS ----
+function gpsOnce(){return new Promise((ok,no)=>{if(!navigator.geolocation)return no(new Error('This phone cannot share location.'));
+ navigator.geolocation.getCurrentPosition(p=>ok({lat:p.coords.latitude,lon:p.coords.longitude}),()=>no(new Error('Please allow location access and try again.')),{enableHighAccuracy:true,timeout:10000})})}
+function gpsWatch(onErr){if(!navigator.geolocation)return onErr&&onErr('No GPS on this phone.');
+ S.watch=navigator.geolocation.watchPosition(p=>{S.pos={lat:p.coords.latitude,lon:p.coords.longitude}},()=>onErr&&onErr('Location is blocked. Allow location for this app.'),{enableHighAccuracy:true,maximumAge:3000});
+ S.timers.push(setInterval(()=>{if(S.pos&&S.token)api('location',S.pos).catch(()=>{})},4000))}
+const map=(lat,lon)=>{const d=0.004;return`<iframe loading="lazy" src="https://www.openstreetmap.org/export/embed.html?bbox=${lon-d},${lat-d},${lon+d},${lat+d}&layer=mapnik&marker=${lat},${lon}"></iframe>`};
+const gmaps=(lat,lon)=>`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+// ---- Home ----
+function home(){$('out').hidden=!S.user;
+ app.innerHTML=`<p class="sub">${S.user?'Signed in: '+esc(S.user.name)+' ('+esc(S.user.role)+')':'Choose an option'}</p>
+ <div class="card" style="--c:var(--red)"><h2>1. Call Ambulance</h2><p>Calls the nearest ambulance and shares your live location.</p><span class="tag">OPEN TO EVERYONE</span><button class="btn" onclick="go(callScreen)">Call Ambulance</button></div>
+ <div class="card" style="--c:var(--blue)"><h2>2. Patient's Condition</h2><p>Nurse uploads the patient's condition; the hospital views it and prepares.</p><span class="tag">AMBULANCE NURSE + HOSPITAL ONLY</span><button class="btn" onclick="guard(['nurse','hospital'],condScreen)">Open</button></div>
+ <div class="card" style="--c:var(--green)"><h2>3. Police</h2><p>Shows ambulance locations and alerts officers within 500 m.</p><span class="tag">REGISTERED POLICE ONLY</span><button class="btn" onclick="guard(['police'],policeScreen)">Open</button></div>
+ <p class="hint">In a life-threatening emergency, also call your local emergency number (108 / 112 in India).</p>`}
+// ---- Login / Register ----
+function guard(roles,next){if(S.user&&roles.includes(S.user.role))return go(next);
+ if(S.user){app.innerHTML=`<button class="back" onclick="go(home)">← Back</button><div class="card" style="--c:var(--red)"><h2>Access denied</h2><p>Your account (${esc(S.user.role)}) cannot open this option. Log out and sign in with the right account.</p></div>`;return}
+ authScreen(roles,next,'login')}
+function authScreen(roles,next,tab){const isP=roles[0]==='police';
+ app.innerHTML=`<button class="back" onclick="go(home)">← Back</button><div class="tabs"><button class="${tab==='login'?'on':''}" id="t1">Sign in</button><button class="${tab==='reg'?'on':''}" id="t2">Register</button></div><div class="card">`+
+ (tab==='login'?`<label>User ID</label><input id="uid" autocapitalize="characters"><label>PIN</label><input id="pin" type="password" inputmode="numeric"><div class="msg" id="m"></div><button class="btn" id="go">Sign in</button>`
+ :`<p class="hint">Only staff of registered organisations can register. You need the invite code from your organisation.</p>
+ <label>Role</label><select id="role">${roles.map(r=>`<option value="${r}">${{nurse:'Ambulance nurse',hospital:'Hospital management',police:'Police officer'}[r]}</option>`).join('')}</select>
+ <label>Full name</label><input id="nm"><label id="ol">${isP?'Police station / area':'Ambulance number'}</label><input id="org">
+ <label>Choose User ID</label><input id="uid" autocapitalize="characters"><label>Choose PIN (4-8 digits)</label><input id="pin" type="password" inputmode="numeric">
+ <label>Invite code</label><input id="code" autocapitalize="characters"><div class="msg" id="m"></div><button class="btn" id="go">Register</button>`)+`</div>`;
+ $('t1').onclick=()=>authScreen(roles,next,'login');$('t2').onclick=()=>authScreen(roles,next,'reg');
+ const role=$('role');if(role)role.onchange=()=>{$('ol').textContent=role.value==='hospital'?'Hospital name':role.value==='police'?'Police station / area':'Ambulance number'};
+ if(role&&roles[0]==='nurse')$('ol').textContent='Ambulance number';
+ $('go').onclick=async()=>{const m=$('m');m.className='msg';m.textContent='';
+  try{if(tab==='reg'){await api('register',{role:role.value,name:$('nm').value,org:$('org').value,userId:$('uid').value,pin:$('pin').value,code:$('code').value});
+    alert('Registered. Now sign in.');authScreen(roles,next,'login')}
+   else{const r=await api('login',{userId:$('uid').value,pin:$('pin').value});setSession(r.token,r.user);
+    if(!roles.includes(r.user.role)){app.innerHTML=`<button class="back" onclick="go(home)">← Back</button><div class="card" style="--c:var(--red)"><h2>Access denied</h2><p>This account cannot open this option.</p></div>`;return}go(next)}}
+  catch(e){m.textContent=e.message}}}
+// ---- 1. Call ambulance ----
+function callScreen(){const saved=localStorage.getItem('ls_req');
+ app.innerHTML=`<button class="back" onclick="go(home)">← Back</button><div class="card" style="--c:var(--red)"><h2>Call Ambulance</h2>
+ <label>Your name</label><input id="nm"><label>Phone number</label><input id="ph" inputmode="tel"><label>What happened? (optional)</label><input id="nt">
+ <div class="msg" id="m"></div><button class="btn" id="call">Call nearest ambulance</button></div><div id="res"></div>`;
+ $('call').onclick=async()=>{const m=$('m');m.textContent='Getting your location…';
+  try{const p=await gpsOnce();const r=await api('ambulance/call',{name:$('nm').value,phone:$('ph').value,note:$('nt').value,lat:p.lat,lon:p.lon});
+   m.textContent='';localStorage.setItem('ls_req',r.id);track(r.id)}catch(e){m.textContent=e.message}};
+ if(saved)track(saved)}
+function track(id){const box=$('res');every(3000,async()=>{try{const s=await api('ambulance/status?id='+id);
+ if(s.status==='none'){box.innerHTML=`<div class="card" style="--c:var(--red)"><h2>No ambulance online nearby</h2><p>Please call your local emergency number now (108 / 112).</p></div>`;localStorage.removeItem('ls_req');stop();return}
+ if(s.status==='done'){box.innerHTML=`<div class="card" style="--c:var(--green)"><h2>Ambulance has reached you</h2></div>`;localStorage.removeItem('ls_req');stop();return}
+ const a=s.ambulance;box.innerHTML=`<div class="card" style="--c:var(--green)"><h2>${s.status==='accepted'?'Ambulance is on the way':'Request sent to ambulance'}</h2>
+ <p>${a?esc(a.org)+' · '+esc(a.name):''}<br>Your live location is shared with the crew.</p>${a?`<div class="big">${s.distance>=1000?(s.distance/1000).toFixed(1)+' km':s.distance+' m'}</div><p>About ${s.etaMin} min away</p>`+map(a.lat,a.lon):''}</div>`}catch(e){}})}
+// ---- 2. Patient condition ----
+function condScreen(){S.user.role==='nurse'?nurseScreen():hospitalScreen()}
+async function nurseScreen(){let hosp=[];try{hosp=(await api('hospitals')).hospitals}catch{}
+ app.innerHTML=`<p class="sub">${esc(S.user.name)} · ${esc(S.user.org)}</p>
+ <div class="card" style="--c:var(--green)"><h2>Ambulance duty</h2><p>Turn on when the ambulance is ready. Your phone shares the ambulance location.</p><span class="pill" id="pill">OFF DUTY</span><div class="msg" id="gm"></div><button class="btn sm" id="duty">Go on duty</button><div id="reqs"></div></div>
+ <div class="card" style="--c:var(--blue)"><h2>Upload patient condition</h2>
+ <label>Send to hospital</label><select id="hs">${hosp.length?hosp.map(h=>`<option value="${esc(h.id)}">${esc(h.name)}</option>`).join(''):'<option value="">No hospitals registered yet</option>'}</select>
+ <label>Patient name</label><input id="pn"><div class="row"><div><label>Age</label><input id="pa" inputmode="numeric"></div><div><label>Heart rate</label><input id="hr" inputmode="numeric"></div></div>
+ <div class="row"><div><label>Blood pressure</label><input id="bp" placeholder="120/80"></div><div><label>SpO2 %</label><input id="sp" inputmode="numeric"></div></div>
+ <label>Consciousness</label><select id="cs"><option>Alert</option><option>Responds to voice</option><option>Responds to pain</option><option>Unconscious</option></select>
+ <label>Injury / illness and first aid given</label><textarea id="nt" rows="3"></textarea><div class="msg" id="m"></div><button class="btn" id="up" style="--c:var(--blue)">Send to hospital</button></div>`;
+ let duty=false;gpsWatch(m=>$('gm').textContent=m);
+ $('duty').onclick=async()=>{try{if(!S.pos)S.pos=await gpsOnce();await api('location',S.pos);duty=!duty;await api('duty',{duty});$('gm').textContent='';
+  $('pill').textContent=duty?'ON DUTY':'OFF DUTY';$('pill').className='pill'+(duty?' on':'');$('duty').textContent=duty?'Go off duty':'Go on duty'}catch(e){duty=false;$('gm').textContent=e.message}};
+ every(4000,async()=>{try{const r=(await api('ambulance/requests')).requests;$('reqs').innerHTML=r.length?'<h3>Emergency calls</h3>'+r.map(x=>`<div class="item"><b>${esc(x.name)}</b> · <a href="tel:${esc(x.phone)}">${esc(x.phone)}</a><br>${esc(x.note)}<br><a href="${gmaps(x.lat,x.lon)}" target="_blank" rel="noopener">Navigate to caller</a>
+  <button class="btn sm" onclick="reqAct('${x.id}','${x.status==='assigned'?'accept':'complete'}')">${x.status==='assigned'?'Accept call':'Patient picked up / done'}</button></div>`).join(''):''}catch{}});
+ $('up').onclick=async()=>{const m=$('m');m.className='msg';try{await api('condition',{hospitalId:$('hs').value,patient:$('pn').value,age:$('pa').value,hr:$('hr').value,bp:$('bp').value,spo2:$('sp').value,cs:$('cs').value,notes:$('nt').value});
+  m.className='msg ok';m.textContent='Sent. The hospital can see it now.';['pn','pa','hr','bp','sp','nt'].forEach(i=>$(i).value='')}catch(e){m.textContent=e.message}}}
+async function reqAct(id,action){try{await api('ambulance/update',{id,action})}catch(e){alert(e.message)}}
+function hospitalScreen(){app.innerHTML=`<p class="sub">${esc(S.user.name)} · ${esc(S.user.org)}</p><div class="card" style="--c:var(--blue)"><h2>Incoming patients</h2><div id="list"><p>Loading…</p></div></div><p class="hint">Updates automatically every few seconds.</p>`;
+ let seen=null;every(4000,async()=>{try{const r=(await api('condition')).reports;
+  if(seen!==null&&r.length>seen&&navigator.vibrate)navigator.vibrate([300,150,300]);seen=r.length;
+  $('list').innerHTML=r.length?r.map(x=>`<div class="item"><b>${esc(x.patient)}</b>, age ${esc(x.age||'?')} · ${new Date(x.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}<br>HR ${esc(x.hr||'-')} · BP ${esc(x.bp||'-')} · SpO2 ${esc(x.spo2||'-')}%<br>${esc(x.cs)}<br>${esc(x.notes)}<br><span class="hint">Prepare: ER bed, doctor, equipment. From ${esc(x.by)}</span></div>`).join(''):'<p>No patients yet.</p>'}catch{}})}
+// ---- 3. Police ----
+function policeScreen(){app.innerHTML=`<p class="sub">${esc(S.user.name)} · ${esc(S.user.org)}</p><div class="msg" id="gm"></div><div id="al"></div><div id="feed"><p>Loading…</p></div>
+ <p class="hint">Keep this screen open. You get an alert when an ambulance comes within 500 m of your location.</p>`;
+ const alerted=new Set();if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();
+ gpsWatch(m=>$('gm').textContent=m);
+ every(3000,async()=>{try{const f=await api('police/feed');
+  if(!f.me)$('gm').textContent='Waiting for your GPS location…';else $('gm').textContent='';
+  f.ambulances.forEach(a=>{if(a.alert&&!alerted.has(a.id)){alerted.add(a.id);if(navigator.vibrate)navigator.vibrate([500,200,500]);
+   if('Notification' in window&&Notification.permission==='granted')new Notification('Ambulance '+a.org+' is '+a.distance+' m away',{body:'Please clear the path.',icon:'icon-192.png'})}
+   if(!a.alert&&a.distance!==null&&a.distance>f.alertMeters+100)alerted.delete(a.id)});
+  const near=f.ambulances.filter(a=>a.alert);
+  $('al').innerHTML=near.map(a=>`<div class="alert">ALERT: Ambulance ${esc(a.org)} is ${a.distance} m away. Please clear the path.</div>`).join('');
+  $('feed').innerHTML=f.ambulances.length?f.ambulances.map(a=>`<div class="card" style="--c:var(--green)"><h2>Ambulance ${esc(a.org)}</h2><p>${esc(a.name)}<br><b>${a.distance===null?'Distance unknown':(a.distance>=1000?(a.distance/1000).toFixed(1)+' km':a.distance+' m')+' from you'}</b> ${a.alert?'<span class="pill on">WITHIN 500 m</span>':''}</p>${map(a.lat,a.lon)}</div>`).join(''):'<div class="card"><p>No ambulance is on duty right now.</p></div>'}catch(e){$('feed').innerHTML='<p class="msg">'+esc(e.message)+'</p>'}})}
+home();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script></body></html>
